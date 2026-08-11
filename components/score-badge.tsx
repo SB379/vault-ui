@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Color-scaled 0–10 relevance score chip. Amber intensity tracks the score. */
+/** Color-scaled 0–10 relevance score chip. Accent intensity tracks the score. */
 export function ScoreBadge({
   score,
   className,
@@ -24,7 +24,7 @@ export function ScoreBadge({
     score >= 9
       ? "border-primary/60 bg-primary/15 text-primary"
       : score >= 7
-        ? "border-primary/30 bg-primary/8 text-primary/85"
+        ? "border-primary/40 bg-primary/10 text-primary"
         : score >= 5
           ? "border-border bg-secondary text-secondary-foreground"
           : "border-border bg-transparent text-muted-foreground";

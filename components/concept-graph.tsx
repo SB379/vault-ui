@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { forceCollide } from "d3-force";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import type { ConceptGraph as ConceptGraphData } from "@/lib/api";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -15,13 +16,48 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ),
 });
 
-// Theme constants (matches globals.css dark intelligence-briefing palette)
-const AMBER = "#e0a43a";
-const AMBER_DIM = "rgba(224, 164, 58, 0.28)";
-const LINK_COLOR = "rgba(222, 217, 205, 0.10)";
-const LINK_HOT = "rgba(224, 164, 58, 0.5)";
-const LABEL_INK = "rgba(237, 233, 224, 0.92)";
-const LABEL_MUTED = "rgba(180, 174, 160, 0.85)";
+// Canvas colors follow the active theme (globals.css "Signal Blue / Slate").
+// The force-graph paints to a raw canvas, so it can't use CSS tokens directly —
+// we mirror the token palette here and swap on light/dark.
+type Palette = {
+  node: string;
+  nodeDim: string;
+  link: string;
+  linkFaint: string;
+  linkHot: string;
+  labelInk: string;
+  labelMuted: string;
+  chip: string;
+  chipHot: string;
+  chipBorder: string;
+};
+
+const DARK_PALETTE: Palette = {
+  node: "#60a5fa", // primary (blue-400)
+  nodeDim: "rgba(96, 165, 250, 0.28)",
+  link: "rgba(241, 245, 249, 0.10)",
+  linkFaint: "rgba(241, 245, 249, 0.03)",
+  linkHot: "rgba(96, 165, 250, 0.55)",
+  labelInk: "rgba(241, 245, 249, 0.96)",
+  labelMuted: "rgba(148, 163, 184, 0.92)",
+  chip: "rgba(15, 23, 42, 0.80)",
+  chipHot: "rgba(15, 23, 42, 0.95)",
+  chipBorder: "rgba(241, 245, 249, 0.14)",
+};
+
+const LIGHT_PALETTE: Palette = {
+  node: "#2563eb", // primary (blue-600)
+  nodeDim: "rgba(37, 99, 235, 0.30)",
+  link: "rgba(15, 23, 42, 0.14)",
+  linkFaint: "rgba(15, 23, 42, 0.04)",
+  linkHot: "rgba(37, 99, 235, 0.55)",
+  labelInk: "rgba(15, 23, 42, 0.96)",
+  labelMuted: "rgba(71, 85, 105, 0.95)",
+  chip: "rgba(255, 255, 255, 0.88)",
+  chipHot: "rgba(255, 255, 255, 0.98)",
+  chipBorder: "rgba(15, 23, 42, 0.14)",
+};
+
 const BG = "rgba(0,0,0,0)";
 
 type FGNode = { id: number; name: string; mention_count: number; x?: number; y?: number };
@@ -37,6 +73,8 @@ function nodeRadius(n: FGNode): number {
 
 export function ConceptGraph({ data }: { data: ConceptGraphData }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const palette = resolvedTheme === "light" ? LIGHT_PALETTE : DARK_PALETTE;
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
@@ -109,11 +147,11 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
       const dimmed = isDimmed(node.id);
       ctx.beginPath();
       ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, 2 * Math.PI);
-      ctx.fillStyle = dimmed ? AMBER_DIM : AMBER;
+      ctx.fillStyle = dimmed ? palette.nodeDim : palette.node;
       ctx.fill();
       if (node.id === hoverId) {
         ctx.lineWidth = 1.5 / scale;
-        ctx.strokeStyle = AMBER;
+        ctx.strokeStyle = palette.node;
         ctx.stroke();
       }
       const hovered =
@@ -132,7 +170,7 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
         const padY = 2.5 / scale;
         const cx = node.x ?? 0;
         const top = (node.y ?? 0) + r + 3 / scale;
-        ctx.fillStyle = hovered ? "rgba(30,25,18,0.94)" : "rgba(18,16,12,0.78)";
+        ctx.fillStyle = hovered ? palette.chipHot : palette.chip;
         const bx = cx - textW / 2 - padX;
         const bw = textW + padX * 2;
         const bh = fontSize + padY * 2;
@@ -140,26 +178,30 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
           ctx.beginPath();
           ctx.roundRect(bx, top - padY, bw, bh, 2.5 / scale);
           ctx.fill();
+          // Subtle border so the chip reads over same-colored surfaces (esp. light).
+          ctx.lineWidth = 0.5 / scale;
+          ctx.strokeStyle = palette.chipBorder;
+          ctx.stroke();
         } else {
           ctx.fillRect(bx, top - padY, bw, bh);
         }
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillStyle = hovered ? LABEL_INK : LABEL_MUTED;
+        ctx.fillStyle = hovered ? palette.labelInk : palette.labelMuted;
         ctx.fillText(label, cx, top);
       }
     },
-    [isDimmed, hoverId, neighbors, degree, labelThreshold],
+    [isDimmed, hoverId, neighbors, degree, labelThreshold, palette],
   );
 
   const linkColor = useCallback(
     (l: FGLink) => {
-      if (hoverId === null) return LINK_COLOR;
+      if (hoverId === null) return palette.link;
       const s = endpointId(l.source);
       const t = endpointId(l.target);
-      return s === hoverId || t === hoverId ? LINK_HOT : "rgba(222, 217, 205, 0.03)";
+      return s === hoverId || t === hoverId ? palette.linkHot : palette.linkFaint;
     },
-    [hoverId],
+    [hoverId, palette],
   );
 
   const linkWidth = useCallback(
@@ -171,7 +213,7 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
     <section className="rounded-lg border border-border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: AMBER }} aria-hidden />
+          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: palette.node }} aria-hidden />
           concept · sized by mentions
         </span>
         <span className="kicker">

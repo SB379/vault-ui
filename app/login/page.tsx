@@ -36,6 +36,10 @@ export default function LoginPage() {
           Editing the vault&rsquo;s config requires an account. Browsing is open.
         </p>
       </header>
+      <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        Curator accounts are provisioned by invite — there&rsquo;s no self-serve
+        sign-up. Contact the maintainer for access.
+      </p>
       <form onSubmit={signIn} className="space-y-3">
         <input
           type="email"
