@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { forceCollide } from "d3-force";
 import { useRouter } from "next/navigation";
 import type { ConceptGraph as ConceptGraphData } from "@/lib/api";
 
@@ -31,12 +32,15 @@ function endpointId(v: number | FGNode): number {
 }
 
 function nodeRadius(n: FGNode): number {
-  return 3 + Math.sqrt(n.mention_count ?? 0) * 2.0;
+  return 7 + Math.sqrt(n.mention_count ?? 0) * 3.2;
 }
 
 export function ConceptGraph({ data }: { data: ConceptGraphData }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
+  const didFit = useRef(false);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [hoverId, setHoverId] = useState<number | null>(null);
 
@@ -50,6 +54,17 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Spread the graph out so bubbles and labels don't overlap: strong repulsion,
+  // longer links, and a collision force reserving room around each node+label.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength(-420).distanceMax(600);
+    fg.d3Force("link")?.distance(110).strength(0.15);
+    fg.d3Force("collide", forceCollide((n: FGNode) => nodeRadius(n) + 26));
+    fg.d3ReheatSimulation?.();
+  }, [size, data]);
 
   // Fresh copies — the force engine mutates node/link objects.
   const graphData = useMemo(
@@ -104,15 +119,34 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
       const hovered =
         hoverId !== null &&
         (node.id === hoverId || (neighbors.get(hoverId)?.has(node.id) ?? false));
-      const persistent = (degree.get(node.id) ?? 0) >= labelThreshold && scale > 0.55;
-      if (hovered || persistent) {
-        const fontSize = Math.min(12 / scale, 5.5);
+      // With the graph spread out, show labels for everything unless dimmed by a
+      // hover elsewhere. Each label sits on a dark chip so it stays readable
+      // over links and neighbouring nodes.
+      const showLabel = hovered || (!dimmed && (scale > 0.5 || (degree.get(node.id) ?? 0) >= labelThreshold));
+      if (showLabel) {
+        const fontSize = Math.min(13 / scale, 6.5);
         ctx.font = `600 ${fontSize}px ui-monospace, monospace`;
+        const label = node.name.length > 30 ? node.name.slice(0, 28) + "…" : node.name;
+        const textW = ctx.measureText(label).width;
+        const padX = 4 / scale;
+        const padY = 2.5 / scale;
+        const cx = node.x ?? 0;
+        const top = (node.y ?? 0) + r + 3 / scale;
+        ctx.fillStyle = hovered ? "rgba(30,25,18,0.94)" : "rgba(18,16,12,0.78)";
+        const bx = cx - textW / 2 - padX;
+        const bw = textW + padX * 2;
+        const bh = fontSize + padY * 2;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(bx, top - padY, bw, bh, 2.5 / scale);
+          ctx.fill();
+        } else {
+          ctx.fillRect(bx, top - padY, bw, bh);
+        }
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         ctx.fillStyle = hovered ? LABEL_INK : LABEL_MUTED;
-        const label = node.name.length > 34 ? node.name.slice(0, 32) + "…" : node.name;
-        ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + r + 2 / scale);
+        ctx.fillText(label, cx, top);
       }
     },
     [isDimmed, hoverId, neighbors, degree, labelThreshold],
@@ -147,6 +181,7 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
       <div ref={containerRef} className="relative overflow-hidden">
         {size && (
           <ForceGraph2D
+            ref={fgRef}
             width={size.w}
             height={size.h}
             graphData={graphData}
@@ -155,12 +190,25 @@ export function ConceptGraph({ data }: { data: ConceptGraphData }) {
             nodeLabel=""
             nodeVal={(n) => nodeRadius(n as FGNode) ** 2}
             nodeCanvasObject={(n, ctx, scale) => paintNode(n as FGNode, ctx, scale)}
+            nodePointerAreaPaint={(n, color, ctx) => {
+              const node = n as FGNode;
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              ctx.arc(node.x ?? 0, node.y ?? 0, nodeRadius(node), 0, 2 * Math.PI);
+              ctx.fill();
+            }}
             linkColor={(l) => linkColor(l as FGLink)}
             linkWidth={(l) => linkWidth(l as FGLink)}
             onNodeClick={(n) => router.push(`/concepts/${(n as FGNode).id}`)}
             onNodeHover={(n) => setHoverId(n ? (n as FGNode).id : null)}
-            cooldownTicks={120}
-            warmupTicks={40}
+            cooldownTicks={200}
+            warmupTicks={60}
+            onEngineStop={() => {
+              if (!didFit.current) {
+                didFit.current = true;
+                fgRef.current?.zoomToFit(500, 60);
+              }
+            }}
           />
         )}
       </div>

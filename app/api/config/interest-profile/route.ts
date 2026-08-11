@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { API_BASE } from "@/lib/api";
+import { authHeader } from "@/lib/supabase/token";
 
 export async function GET() {
   const res = await fetch(`${API_BASE}/api/config/interest-profile`, {
@@ -12,7 +13,7 @@ export async function PUT(req: Request) {
   const body = await req.json();
   const res = await fetch(`${API_BASE}/api/config/interest-profile`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify(body),
   });
   return NextResponse.json(await res.json(), { status: res.status });
